@@ -1,0 +1,146 @@
+╔══════════════════════════════════════════════════════════════╗
+║         CaterFlow — Hostinger Cloud Deployment Guide         ║
+║                  Node.js + MySQL Backend                     ║
+╚══════════════════════════════════════════════════════════════╝
+
+What you will have when done:
+  ✅ MySQL database storing all your data permanently
+  ✅ Node.js API running on your Hostinger server
+  ✅ All vendors can log in from any device and add entries
+  ✅ Admin sees all data in real time from anywhere
+
+────────────────────────────────────────────────────────────────
+STEP 1 — Create MySQL Database on Hostinger
+────────────────────────────────────────────────────────────────
+
+1. Log in at hpanel.hostinger.com
+2. Go to: Hosting → your plan → Databases → MySQL Databases
+3. Click "Create a New MySQL Database"
+     Database name: caterflow
+     Username:      caterflow_user
+     Password:      (make a strong one — write it down!)
+4. Click Create
+
+5. Go to: Databases → phpMyAdmin → Enter phpMyAdmin
+6. Click "caterflow" on the left panel
+7. Click the "SQL" tab
+8. Open schema.sql from this package, copy everything, paste it in, click "Go"
+   → You should see "9 queries executed successfully"
+
+────────────────────────────────────────────────────────────────
+STEP 2 — Upload Backend Files
+────────────────────────────────────────────────────────────────
+
+Using Hostinger File Manager:
+  1. hPanel → File Manager
+  2. Go to public_html
+  3. Create a folder called "api"
+  4. Upload ALL files from caterflow-backend/ into public_html/api/
+
+Using SSH (faster):
+  1. hPanel → Advanced → SSH Access → Enable
+  2. On your computer terminal:
+       scp -r ./caterflow-backend/* user@yourip:~/public_html/api/
+
+────────────────────────────────────────────────────────────────
+STEP 3 — Configure .env File
+────────────────────────────────────────────────────────────────
+
+SSH into your server, then:
+  cd ~/public_html/api
+  cp .env.example .env
+  nano .env
+
+Fill in:
+  DB_HOST=localhost
+  DB_PORT=3306
+  DB_USER=caterflow_user
+  DB_PASSWORD=<your password from step 1>
+  DB_NAME=caterflow
+  JWT_SECRET=<run: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))">
+  PORT=3001
+  FRONTEND_URL=https://yourdomain.com
+
+Save: Ctrl+X → Y → Enter
+
+────────────────────────────────────────────────────────────────
+STEP 4 — Install Dependencies & Start Server
+────────────────────────────────────────────────────────────────
+
+  npm install
+  node src/seed-passwords.js     ← run ONCE to create users
+  npm install -g pm2
+  pm2 start src/index.js --name caterflow-api
+  pm2 startup && pm2 save
+
+Verify:
+  pm2 status                     ← should show "online"
+  curl http://localhost:3001/api/health  ← should return {"status":"ok"}
+
+────────────────────────────────────────────────────────────────
+STEP 5 — Set Up Nginx Proxy
+────────────────────────────────────────────────────────────────
+
+Edit your Nginx config:
+  sudo nano /etc/nginx/sites-available/yourdomain.com
+
+Add INSIDE the server {} block:
+  location /api/ {
+    proxy_pass         http://localhost:3001/api/;
+    proxy_http_version 1.1;
+    proxy_set_header   Host $host;
+    proxy_cache_bypass $http_upgrade;
+  }
+
+Then:
+  sudo nginx -t
+  sudo systemctl reload nginx
+
+────────────────────────────────────────────────────────────────
+STEP 6 — Update the Frontend
+────────────────────────────────────────────────────────────────
+
+In catering-management.jsx, near the top find this line:
+  const API_BASE = "https://yourdomain.com/api";
+
+Change "yourdomain.com" to your actual Hostinger domain name.
+
+Upload the JSX file to your public_html as part of your React app.
+
+────────────────────────────────────────────────────────────────
+STEP 7 — Test
+────────────────────────────────────────────────────────────────
+
+Open your domain → Login as admin / admin123
+Add a client, add a purchase, refresh the page — data stays! ✅
+Login as vendor1 / vendor123 from a different device — it works! ✅
+
+────────────────────────────────────────────────────────────────
+TROUBLESHOOTING
+────────────────────────────────────────────────────────────────
+
+Cannot connect to database
+  → Check .env values match exactly what you set in Hostinger hPanel
+  → In hPanel Databases, make sure the user has all privileges
+
+CORS error in browser
+  → Check FRONTEND_URL in .env matches your exact domain (no trailing slash)
+  → Make sure Nginx proxy is configured (Step 5)
+
+pm2 command not found
+  → Run: export PATH=$PATH:$(npm prefix -g)/bin
+
+App crashes on start
+  → Run: pm2 logs caterflow-api  to see the error
+
+────────────────────────────────────────────────────────────────
+DEFAULT LOGIN CREDENTIALS (change these after first login!)
+────────────────────────────────────────────────────────────────
+
+Admin:   admin    / admin123
+Vendor:  vendor1  / vendor123
+         vendor2  / vendor456
+         vendor3  / vendor789
+         vendor4  / vendor000
+         vendor5  / vendor111
+         vendor6  / vendor222

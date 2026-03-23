@@ -1,0 +1,381 @@
+// ============================================================
+// CaterFlow Backend — server.js
+// Node.js + Express + MySQL
+// ============================================================
+
+require('dotenv').config();
+const express    = require('express');
+const cors       = require('cors');
+const mysql      = require('mysql2/promise');
+const bcrypt     = require('bcryptjs');
+const jwt        = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+
+const app  = express();
+const PORT = process.env.PORT || 5000;
+
+// ── MIDDLEWARE ────────────────────────────────────────────────
+app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
+app.use(express.json());
+
+// ── DATABASE POOL ─────────────────────────────────────────────
+const db = mysql.createPool({
+  host:     process.env.DB_HOST     || 'localhost',
+  port:     process.env.DB_PORT     || 3306,
+  user:     process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME     || 'caterflow',
+  waitForConnections: true,
+  connectionLimit:    10,
+});
+
+// Test DB connection on startup
+(async () => {
+  try {
+    await db.query('SELECT 1');
+    console.log('✅ MySQL connected');
+  } catch (err) {
+    console.error('❌ MySQL connection failed:', err.message);
+    process.exit(1);
+  }
+})();
+
+// ── AUTH MIDDLEWARE ───────────────────────────────────────────
+function authMiddleware(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.user = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET);
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+function adminOnly(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  next();
+}
+
+// ── HELPER ───────────────────────────────────────────────────
+const ok  = (res, data)    => res.json({ success: true, data });
+const err = (res, msg, code = 400) => res.status(code).json({ success: false, error: msg });
+
+// ============================================================
+// AUTH ROUTES
+// ============================================================
+
+// POST /api/auth/login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return err(res, 'Username and password required');
+
+    const [rows] = await db.query(
+      'SELECT * FROM users WHERE username = ?', [username]
+    );
+    if (!rows.length) return err(res, 'Invalid credentials', 401);
+
+    const user = rows[0];
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return err(res, 'Invalid credentials', 401);
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role, name: user.name, clientId: user.client_id },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    ok(res, {
+      token,
+      user: { id: user.id, name: user.name, username: user.username, role: user.role, clientId: user.client_id }
+    });
+  } catch (e) {
+    console.error(e);
+    err(res, 'Server error', 500);
+  }
+});
+
+// ============================================================
+// CLIENTS
+// ============================================================
+
+// GET /api/clients
+app.get('/api/clients', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM clients ORDER BY name');
+    ok(res, rows);
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// POST /api/clients
+app.post('/api/clients', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { name, type, location } = req.body;
+    if (!name || !location) return err(res, 'Name and location required');
+    const id = uuidv4();
+    await db.query('INSERT INTO clients (id, name, type, location) VALUES (?, ?, ?, ?)',
+      [id, name, type || 'Hospital', location]);
+    ok(res, { id, name, type: type || 'Hospital', location });
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// PUT /api/clients/:id
+app.put('/api/clients/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { name, type, location } = req.body;
+    if (!name || !location) return err(res, 'Name and location required');
+    await db.query('UPDATE clients SET name=?, type=?, location=? WHERE id=?',
+      [name, type, location, req.params.id]);
+    ok(res, { id: req.params.id, name, type, location });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// DELETE /api/clients/:id
+app.delete('/api/clients/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    await db.query('DELETE FROM clients WHERE id=?', [req.params.id]);
+    ok(res, { deleted: req.params.id });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// ============================================================
+// GROCERY ITEMS
+// ============================================================
+
+// GET /api/items
+app.get('/api/items', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM grocery_items ORDER BY category, name');
+    ok(res, rows);
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// POST /api/items
+app.post('/api/items', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { name, unit, category } = req.body;
+    if (!name) return err(res, 'Name required');
+    const id = uuidv4();
+    await db.query('INSERT INTO grocery_items (id, name, unit, category) VALUES (?, ?, ?, ?)',
+      [id, name, unit || 'kg', category || 'Others']);
+    ok(res, { id, name, unit: unit || 'kg', category: category || 'Others' });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// PUT /api/items/:id
+app.put('/api/items/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { name, unit, category } = req.body;
+    if (!name) return err(res, 'Name required');
+    await db.query('UPDATE grocery_items SET name=?, unit=?, category=? WHERE id=?',
+      [name, unit, category, req.params.id]);
+    ok(res, { id: req.params.id, name, unit, category });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// DELETE /api/items/:id
+app.delete('/api/items/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    await db.query('DELETE FROM grocery_items WHERE id=?', [req.params.id]);
+    ok(res, { deleted: req.params.id });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// ============================================================
+// USERS
+// ============================================================
+
+// GET /api/users
+app.get('/api/users', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      'SELECT id, name, username, role, client_id as clientId, created_at FROM users ORDER BY role DESC, name'
+    );
+    ok(res, rows);
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// POST /api/users
+app.post('/api/users', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { name, username, password, role, clientId } = req.body;
+    if (!name || !username || !password) return err(res, 'Name, username and password required');
+
+    const [exists] = await db.query('SELECT id FROM users WHERE username=?', [username]);
+    if (exists.length) return err(res, 'Username already taken');
+
+    const hashed = await bcrypt.hash(password, 10);
+    const [result] = await db.query(
+      'INSERT INTO users (name, username, password, role, client_id) VALUES (?, ?, ?, ?, ?)',
+      [name, username, hashed, role || 'vendor', clientId || null]
+    );
+    ok(res, { id: result.insertId, name, username, role: role || 'vendor', clientId: clientId || null });
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// PUT /api/users/:id
+app.put('/api/users/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { name, password, role, clientId } = req.body;
+    if (!name) return err(res, 'Name required');
+
+    if (password) {
+      const hashed = await bcrypt.hash(password, 10);
+      await db.query('UPDATE users SET name=?, password=?, role=?, client_id=? WHERE id=?',
+        [name, hashed, role, clientId || null, req.params.id]);
+    } else {
+      await db.query('UPDATE users SET name=?, role=?, client_id=? WHERE id=?',
+        [name, role, clientId || null, req.params.id]);
+    }
+    ok(res, { id: parseInt(req.params.id), name, role, clientId: clientId || null });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// DELETE /api/users/:id
+app.delete('/api/users/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    // Prevent deleting last admin
+    const [admins] = await db.query("SELECT id FROM users WHERE role='admin'");
+    const [target] = await db.query('SELECT role FROM users WHERE id=?', [req.params.id]);
+    if (target[0]?.role === 'admin' && admins.length === 1)
+      return err(res, 'Cannot delete the last admin');
+
+    await db.query('DELETE FROM users WHERE id=?', [req.params.id]);
+    ok(res, { deleted: req.params.id });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// ============================================================
+// PURCHASES
+// ============================================================
+
+// GET /api/purchases  (admin: all, vendor: own only)
+app.get('/api/purchases', authMiddleware, async (req, res) => {
+  try {
+    const { clientId, month } = req.query;
+    let sql = `
+      SELECT p.*, GROUP_CONCAT(
+        JSON_OBJECT(
+          'groceryId', pi.grocery_id,
+          'qty',       pi.qty,
+          'rate',      pi.rate,
+          'total',     pi.total
+        )
+      ) as items_json
+      FROM purchases p
+      LEFT JOIN purchase_items pi ON pi.purchase_id = p.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (req.user.role === 'vendor') {
+      sql += ' AND p.added_by = ?'; params.push(req.user.username);
+    } else {
+      if (clientId && clientId !== 'ALL') { sql += ' AND p.client_id = ?'; params.push(clientId); }
+    }
+    if (month) { sql += ' AND DATE_FORMAT(p.date, "%Y-%m") = ?'; params.push(month); }
+
+    sql += ' GROUP BY p.id ORDER BY p.date DESC, p.id DESC';
+
+    const [rows] = await db.query(sql, params);
+
+    // Parse items_json
+    const purchases = rows.map((r) => ({
+      id:          r.id,
+      clientId:    r.client_id,
+      date:        r.date.toISOString().split('T')[0],
+      peopleCount: r.people_count,
+      totalAmount: parseFloat(r.total_amount),
+      addedBy:     r.added_by,
+      items:       r.items_json
+        ? r.items_json.split('},{').map((s) => {
+            try { return JSON.parse(s.startsWith('{') ? s : '{' + s); } catch { return null; }
+          }).filter(Boolean).map((i) => ({ ...i, qty: parseFloat(i.qty), rate: parseFloat(i.rate), total: parseFloat(i.total) }))
+        : [],
+    }));
+
+    ok(res, purchases);
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// POST /api/purchases
+app.post('/api/purchases', authMiddleware, async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const { clientId, date, peopleCount, items } = req.body;
+    if (!clientId || !date || !items?.length) return err(res, 'clientId, date and items required');
+
+    const totalAmount = items.reduce((s, i) => s + (i.qty * i.rate), 0);
+    await conn.beginTransaction();
+
+    const [result] = await conn.query(
+      'INSERT INTO purchases (client_id, date, people_count, total_amount, added_by) VALUES (?, ?, ?, ?, ?)',
+      [clientId, date, peopleCount || 0, totalAmount, req.user.username]
+    );
+    const purchaseId = result.insertId;
+
+    for (const item of items) {
+      await conn.query(
+        'INSERT INTO purchase_items (purchase_id, grocery_id, qty, rate, total) VALUES (?, ?, ?, ?, ?)',
+        [purchaseId, item.groceryId, item.qty, item.rate, item.qty * item.rate]
+      );
+    }
+
+    await conn.commit();
+    ok(res, { id: purchaseId, clientId, date, peopleCount, totalAmount, addedBy: req.user.username, items });
+  } catch (e) {
+    await conn.rollback();
+    console.error(e);
+    err(res, 'Server error', 500);
+  } finally {
+    conn.release();
+  }
+});
+
+// PUT /api/purchases/:id
+app.put('/api/purchases/:id', authMiddleware, adminOnly, async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const { clientId, date, peopleCount, items } = req.body;
+    if (!items?.length) return err(res, 'Items required');
+
+    const totalAmount = items.reduce((s, i) => s + (i.qty * i.rate), 0);
+    await conn.beginTransaction();
+
+    await conn.query(
+      'UPDATE purchases SET client_id=?, date=?, people_count=?, total_amount=? WHERE id=?',
+      [clientId, date, peopleCount || 0, totalAmount, req.params.id]
+    );
+    await conn.query('DELETE FROM purchase_items WHERE purchase_id=?', [req.params.id]);
+
+    for (const item of items) {
+      await conn.query(
+        'INSERT INTO purchase_items (purchase_id, grocery_id, qty, rate, total) VALUES (?, ?, ?, ?, ?)',
+        [req.params.id, item.groceryId, item.qty, item.rate, item.qty * item.rate]
+      );
+    }
+
+    await conn.commit();
+    ok(res, { id: parseInt(req.params.id), clientId, date, peopleCount, totalAmount, items });
+  } catch (e) {
+    await conn.rollback();
+    err(res, 'Server error', 500);
+  } finally {
+    conn.release();
+  }
+});
+
+// DELETE /api/purchases/:id
+app.delete('/api/purchases/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    await db.query('DELETE FROM purchases WHERE id=?', [req.params.id]);
+    ok(res, { deleted: req.params.id });
+  } catch (e) { err(res, 'Server error', 500); }
+});
+
+// ── HEALTH CHECK ──────────────────────────────────────────────
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+
+// ── START ─────────────────────────────────────────────────────
+app.listen(PORT, () => console.log(`🚀 CaterFlow API running on port ${PORT}`));
