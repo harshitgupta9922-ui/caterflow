@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── API CONFIG ────────────────────────────────────────────────────────────────
-const API_BASE = "http://localhost:3006/api";
+const API_BASE = "https://portfolio-backend-ujfy.onrender.com/api";
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
 async function api(path, options = {}) {
