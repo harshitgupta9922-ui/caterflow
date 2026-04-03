@@ -286,6 +286,7 @@ function Sidebar({ currentUser, activePage, onNavigate, onLogout }) {
 // ADMIN DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
 function AdminDashboard({ purchases, clients }) {
+  const getClient = (id) => clients.find(c => c.id === id);
   const today     = todayStr();
   const thisMonth = getMonth(today);
   const todayP    = purchases.filter((p) => p.date === today);
@@ -594,6 +595,7 @@ function ClientsPage({ purchases, clients, users }) {
 // INVENTORY — DAILY WISE
 // ══════════════════════════════════════════════════════════════════════════════
 function InventoryPage({ purchases, clients, groceryItems }) {
+  const getClient = (id) => clients.find(c => c.id === id);
   const [view,      setView]      = useState("daily");   // "daily" | "summary"
   const [cf,        setCf]        = useState("ALL");
   const [mf,        setMf]        = useState(getMonth(todayStr()));
@@ -893,6 +895,7 @@ function InventoryPage({ purchases, clients, groceryItems }) {
 // ALL PURCHASES
 // ══════════════════════════════════════════════════════════════════════════════
 function PurchasesPage({ purchases, clients, groceryItems }) {
+  const getClient = (id) => clients.find(c => c.id === id);
   const [cf, setCf]     = useState("ALL");
   const [mf, setMf]     = useState("");
   const [sel, setSel]   = useState(null);
@@ -984,6 +987,7 @@ function PurchasesPage({ purchases, clients, groceryItems }) {
 // REPORTS
 // ══════════════════════════════════════════════════════════════════════════════
 function ReportsPage({ purchases, clients, groceryItems }) {
+  const getClient = (id) => clients.find(c => c.id === id);
   const [rt, setRt] = useState("monthly");
   const [cf, setCf] = useState("ALL");
   const [mf, setMf] = useState(getMonth(todayStr()));
