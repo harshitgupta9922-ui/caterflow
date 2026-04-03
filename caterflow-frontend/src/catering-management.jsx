@@ -1723,6 +1723,7 @@ export default function App() {
   const [activePage,   setActivePage]   = useState(null);
   const [purchases,    setPurchases]    = useState([]);
   const [clients,      setClients]      = useState([]);
+  const getClient = (id) => clients.find(c => c.id === id);
   const [groceryItems, setGroceryItems] = useState([]);
   const [users,        setUsers]        = useState([]);
   const [loading,      setLoading]      = useState(false);
