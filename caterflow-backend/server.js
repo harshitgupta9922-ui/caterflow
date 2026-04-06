@@ -744,5 +744,3 @@ app.get('/api/mis', authMiddleware, adminOnly, async (req, res) => {
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
 
-// ── START ─────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 CaterFlow API running on 0.0.0.0:${PORT}`));
