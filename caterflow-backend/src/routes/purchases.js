@@ -119,11 +119,16 @@ router.put('/:id', authMiddleware, async (req, res) => {
   const { clientId, date, peopleCount, items } = req.body;
   try {
     // Check ownership for vendors
-    const [purchase] = await db.query('SELECT added_by FROM purchases WHERE id = ?', [req.params.id]);
+    const [purchase] = await db.query('SELECT added_by, client_id FROM purchases WHERE id = ?', [req.params.id]);
     if (!purchase[0]) return res.status(404).json({ error: 'Purchase not found' });
 
-    if (req.user.role === 'vendor' && purchase[0].added_by !== req.user.username) {
-      return res.status(403).json({ error: 'You can only edit your own entries' });
+    if (req.user.role === 'vendor') {
+      if (purchase[0].added_by !== req.user.username) {
+        return res.status(403).json({ error: 'You can only edit your own entries' });
+      }
+      if (clientId !== req.user.clientId) {
+        return res.status(403).json({ error: 'You can only edit entries for your assigned client' });
+      }
     }
 
     const totalAmount = items.reduce((s, i) => s + (i.qty * i.rate), 0);
