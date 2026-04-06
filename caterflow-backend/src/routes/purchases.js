@@ -115,6 +115,7 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/purchases/:id — admin or vendor can edit their own
+// Vendors can edit their own entries, admins can edit any
 router.put('/:id', authMiddleware, async (req, res) => {
   const { clientId, date, peopleCount, items } = req.body;
   try {
