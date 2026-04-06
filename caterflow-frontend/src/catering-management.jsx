@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── API CONFIG ────────────────────────────────────────────────────────────────
-const API_BASE = "https://caterflow-nine.vercel.app/api";
+const API_BASE = import.meta.env.VITE_API_URL || "https://slategrey-ant-868256.hostingersite.com/api";
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
 async function api(path, options = {}) {
