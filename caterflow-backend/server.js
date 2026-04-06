@@ -620,6 +620,46 @@ app.post('/api/sales', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
+// PUT /api/sales/:id - admin only
+app.put('/api/sales/:id', authMiddleware, adminOnly, async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const { clientId, date, totalAmount, description, entryType, items } = req.body;
+    if (!clientId || !date) return err(res, 'clientId and date required');
+
+    const finalAmount = entryType === 'detailed' && items
+      ? items.reduce((s, i) => s + (i.qty * i.rate), 0)
+      : (totalAmount || 0);
+
+    await conn.beginTransaction();
+    await conn.query(
+      'UPDATE sales SET client_id = ?, date = ?, total_amount = ?, description = ?, entry_type = ? WHERE id = ?',
+      [clientId, date, finalAmount, description || null, entryType || 'lump_sum', req.params.id]
+    );
+
+    // Clear old items if detailed
+    await conn.query('DELETE FROM sales_items WHERE sale_id = ?', [req.params.id]);
+
+    // Add new items if detailed
+    if (entryType === 'detailed' && items && items.length > 0) {
+      for (const item of items) {
+        await conn.query(
+          'INSERT INTO sales_items (sale_id, item_name, qty, rate, total) VALUES (?, ?, ?, ?, ?)',
+          [req.params.id, item.itemName, item.qty, item.rate, item.qty * item.rate]
+        );
+      }
+    }
+    await conn.commit();
+    ok(res, { id: parseInt(req.params.id), clientId, date, totalAmount: finalAmount, description, entryType, items: items || [] });
+  } catch (e) {
+    await conn.rollback();
+    console.error(e);
+    err(res, 'Server error', 500);
+  } finally {
+    conn.release();
+  }
+});
+
 // DELETE /api/sales/:id - admin only
 app.delete('/api/sales/:id', authMiddleware, adminOnly, async (req, res) => {
   try {

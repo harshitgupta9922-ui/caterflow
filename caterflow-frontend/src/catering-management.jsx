@@ -229,6 +229,9 @@ function Sidebar({ currentUser, activePage, onNavigate, onLogout }) {
     { key: "manage-users",     label: "Users / Vendors"  },
     { key: "manage-purchases", label: "Purchase Entries" },
     { key: "manage-returns",   label: "Return Entries"   },
+    { key: "manage-employees", label: "Employees"        },
+    { key: "manage-sales",     label: "Sales & Revenue"  },
+    { key: "mis-report",       label: "Profit MIS"       },
   ];
   const vendorNav = [
     { key: "vendor-dashboard", label: "My Dashboard"   },
@@ -1885,6 +1888,422 @@ function MyReturnsPage({ currentUser, returns }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// MANAGE EMPLOYEES PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function ManageEmployeesPage({ employees, clients, onAdd, onDelete, onEdit }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ clientId: "", name: "", position: "", monthlySalary: 0 });
+  const [error, setError] = useState("");
+
+  const getClient = (id) => clients.find(c => c.id === id);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.clientId || !form.name || !form.monthlySalary) {
+      setError("Client, name, and salary required");
+      return;
+    }
+    try {
+      if (editingId) {
+        await onEdit({ ...form, id: editingId });
+      } else {
+        await onAdd(form);
+      }
+      setForm({ clientId: "", name: "", position: "", monthlySalary: 0 });
+      setShowForm(false);
+      setEditingId(null);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const startEdit = (emp) => {
+    setForm(emp);
+    setEditingId(emp.id);
+    setShowForm(true);
+  };
+
+  const grouped = employees.reduce((acc, emp) => {
+    if (!acc[emp.clientId]) acc[emp.clientId] = [];
+    acc[emp.clientId].push(emp);
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <div className="ph"><div className="ptit">Manage Employees</div><div className="psub">Add and manage staff</div></div>
+      <div className="pb">
+        <button className="btn btn-p" onClick={() => { setShowForm(true); setEditingId(null); setForm({ clientId: "", name: "", position: "", monthlySalary: 0 }); }}>+ Add Employee</button>
+      </div>
+
+      {showForm && (
+        <div className="mo" onClick={() => setShowForm(false)}>
+          <div className="mb" onClick={(e) => e.stopPropagation()}>
+            <div className="mbt">{editingId ? "Edit Employee" : "Add Employee"}</div>
+            {error && <div className="al ale">{error}</div>}
+            <form onSubmit={handleSubmit}>
+              <div className="fg">
+                <label>Client *</label>
+                <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
+                  <option value="">Select client</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="fg">
+                <label>Name *</label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Employee name" />
+              </div>
+              <div className="fg">
+                <label>Position</label>
+                <input value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} placeholder="e.g., Chef, Cook, Helper" />
+              </div>
+              <div className="fg">
+                <label>Monthly Salary *</label>
+                <input type="number" value={form.monthlySalary} onChange={(e) => setForm({ ...form, monthlySalary: parseFloat(e.target.value) || 0 })} placeholder="0" />
+              </div>
+              <div className="mbf">
+                <button type="button" className="btn btn-s" onClick={() => setShowForm(false)}>Cancel</button>
+                <button type="submit" className="btn btn-p">{editingId ? "Update" : "Add"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="pb">
+        {employees.length === 0 ? (
+          <div className="card emp"><div className="eic">👥</div>No employees yet</div>
+        ) : (
+          Object.entries(grouped).map(([cId, emps]) => (
+            <div key={cId} className="mb24">
+              <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>{getClient(cId)?.name}</h3>
+              <div className="card">
+                <div className="tw">
+                  <table>
+                    <thead><tr><th>Name</th><th>Position</th><th>Monthly Salary</th><th></th></tr></thead>
+                    <tbody>
+                      {emps.map((e) => (
+                        <tr key={e.id}>
+                          <td><strong>{e.name}</strong></td>
+                          <td>{e.position || "-"}</td>
+                          <td className="ta">{fmt(e.monthlySalary)}</td>
+                          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                            <button className="btn btn-s btn-sm" onClick={() => startEdit(e)} style={{ marginRight: 6 }}>Edit</button>
+                            <button className="btn btn-d btn-sm" onClick={() => onDelete(e.id)}>Delete</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop: 12, fontSize: 13, color: "var(--muted)" }}>
+                  Total monthly salary: <strong className="ta">{fmt(emps.reduce((s, e) => s + e.monthlySalary, 0))}</strong>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MANAGE SALES PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function ManageSalesPage({ sales, clients, onAdd, onDelete, onEdit }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [entryType, setEntryType] = useState("lump_sum");
+  const [form, setForm] = useState({ clientId: "", date: todayStr(), totalAmount: 0, description: "", entryType: "lump_sum", items: [] });
+  const [error, setError] = useState("");
+
+  const getClient = (id) => clients.find(c => c.id === id);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.clientId || !form.date) {
+      setError("Client and date required");
+      return;
+    }
+    if (form.entryType === "lump_sum" && !form.totalAmount) {
+      setError("Amount required for quick entry");
+      return;
+    }
+    if (form.entryType === "detailed" && (!form.items || form.items.length === 0)) {
+      setError("At least one item required for detailed entry");
+      return;
+    }
+    try {
+      const payload = {
+        clientId: form.clientId,
+        date: form.date,
+        totalAmount: form.entryType === "lump_sum" ? form.totalAmount : form.items.reduce((s, i) => s + (i.qty * i.rate), 0),
+        description: form.description || "",
+        entryType: form.entryType,
+      };
+      if (form.entryType === "detailed") payload.items = form.items;
+
+      if (editingId) {
+        await onEdit({ ...payload, id: editingId });
+      } else {
+        await onAdd(payload);
+      }
+      setForm({ clientId: "", date: todayStr(), totalAmount: 0, description: "", entryType: "lump_sum", items: [] });
+      setShowForm(false);
+      setEditingId(null);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const addItem = () => {
+    setForm({ ...form, items: [...form.items, { itemName: "", qty: 0, rate: 0 }] });
+  };
+
+  const removeItem = (idx) => {
+    setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
+  };
+
+  const updateItem = (idx, key, val) => {
+    const newItems = [...form.items];
+    newItems[idx][key] = val;
+    setForm({ ...form, items: newItems });
+  };
+
+  const sorted = [...sales].sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <div>
+      <div className="ph"><div className="ptit">Manage Sales & Revenue</div><div className="psub">Record client sales</div></div>
+      <div className="pb">
+        <button className="btn btn-p" onClick={() => { setShowForm(true); setEditingId(null); setForm({ clientId: "", date: todayStr(), totalAmount: 0, description: "", entryType: "lump_sum", items: [] }); setEntryType("lump_sum"); }}>+ Add Sale</button>
+      </div>
+
+      {showForm && (
+        <div className="mo" onClick={() => setShowForm(false)}>
+          <div className="mb" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
+            <div className="mbt">{editingId ? "Edit Sale" : "Add Sale"}</div>
+            {error && <div className="al ale">{error}</div>}
+            <form onSubmit={handleSubmit}>
+              <div className="fr">
+                <div className="fg" style={{ flex: 1 }}>
+                  <label>Client *</label>
+                  <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
+                    <option value="">Select client</option>
+                    {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="fg" style={{ flex: 1 }}>
+                  <label>Date *</label>
+                  <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+                    <input type="radio" checked={form.entryType === "lump_sum"} onChange={() => { setForm({ ...form, entryType: "lump_sum", items: [] }); setEntryType("lump_sum"); }} />
+                    Quick Entry (Total Amount)
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+                    <input type="radio" checked={form.entryType === "detailed"} onChange={() => { setForm({ ...form, entryType: "detailed", totalAmount: 0 }); setEntryType("detailed"); }} />
+                    Detailed (Item-wise)
+                  </label>
+                </div>
+              </div>
+
+              {form.entryType === "lump_sum" ? (
+                <>
+                  <div className="fg">
+                    <label>Total Amount *</label>
+                    <input type="number" value={form.totalAmount} onChange={(e) => setForm({ ...form, totalAmount: parseFloat(e.target.value) || 0 })} placeholder="0" />
+                  </div>
+                  <div className="fg">
+                    <label>Description</label>
+                    <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g., Monthly catering" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", marginBottom: 8, display: "block" }}>ITEMS</label>
+                    {form.items.map((item, idx) => (
+                      <div key={idx} className="pir" style={{ marginBottom: 10, padding: "10px", background: "var(--surface)", borderRadius: 8 }}>
+                        <input type="text" placeholder="Item name" value={item.itemName} onChange={(e) => updateItem(idx, "itemName", e.target.value)} style={{ padding: "8px 12px", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 13 }} />
+                        <input type="number" placeholder="Qty" value={item.qty} onChange={(e) => updateItem(idx, "qty", parseFloat(e.target.value) || 0)} step="0.01" style={{ padding: "8px 12px", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 13 }} />
+                        <input type="number" placeholder="Rate" value={item.rate} onChange={(e) => updateItem(idx, "rate", parseFloat(e.target.value) || 0)} step="0.01" style={{ padding: "8px 12px", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 13 }} />
+                        <button type="button" className="btn btn-d btn-sm" onClick={() => removeItem(idx)}>✕</button>
+                      </div>
+                    ))}
+                    <button type="button" className="btn btn-s btn-sm" onClick={addItem} style={{ marginTop: 8 }}>+ Add Item</button>
+                  </div>
+                  {form.items.length > 0 && (
+                    <div style={{ padding: 10, background: "rgba(0,230,118,0.08)", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600 }}>
+                      Total: {fmt(form.items.reduce((s, i) => s + (i.qty * i.rate), 0))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="mbf">
+                <button type="button" className="btn btn-s" onClick={() => setShowForm(false)}>Cancel</button>
+                <button type="submit" className="btn btn-p">{editingId ? "Update" : "Add"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="pb">
+        {sorted.length === 0 ? (
+          <div className="card emp"><div className="eic">💰</div>No sales yet</div>
+        ) : (
+          <div className="card">
+            <div className="tw">
+              <table>
+                <thead><tr><th>Date</th><th>Client</th><th>Type</th><th>Amount</th><th></th></tr></thead>
+                <tbody>
+                  {sorted.map((s) => (
+                    <tr key={s.id}>
+                      <td>{fmtDate(s.date)}</td>
+                      <td>{getClient(s.clientId)?.name}</td>
+                      <td><span className="bdg bg">{s.entryType === "lump_sum" ? "Quick" : "Detailed"}</span></td>
+                      <td className="ta">{fmt(s.totalAmount)}</td>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <button className="btn btn-d btn-sm" onClick={() => onDelete(s.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MIS REPORT PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function MISReportPage({ purchases, returns, employees, sales, clients }) {
+  const [selectedClient, setSelectedClient] = useState(clients.length > 0 ? clients[0].id : "");
+  const [selectedMonth, setSelectedMonth] = useState(getMonth(todayStr()));
+  const getClient = (id) => clients.find(c => c.id === id);
+
+  const filterByMonth = (arr, dateField = "date") => arr.filter(item => getMonth(item[dateField]) === selectedMonth);
+  const filterByClient = (arr, clientField = "clientId") => arr.filter(item => item[clientField] === selectedClient);
+
+  const monthSales = filterByClient(filterByMonth(sales), "clientId");
+  const monthPurchases = filterByClient(filterByMonth(purchases), "clientId");
+  const monthReturns = filterByClient(filterByMonth(returns), "clientId");
+  const clientEmployees = employees.filter(e => e.clientId === selectedClient);
+
+  const revenue = monthSales.reduce((s, x) => s + x.totalAmount, 0);
+  const purchasesTotal = monthPurchases.reduce((s, x) => s + x.totalAmount, 0);
+  const returnsTotal = monthReturns.reduce((s, x) => s + x.totalAmount, 0);
+  const salariesTotal = clientEmployees.reduce((s, e) => s + e.monthlySalary, 0);
+  const totalExpenses = purchasesTotal + returnsTotal + salariesTotal;
+  const netProfit = revenue - totalExpenses;
+
+  return (
+    <div>
+      <div className="ph"><div className="ptit">Profit MIS Report</div><div className="psub">Monthly profit analysis</div></div>
+      <div className="pb">
+        <div className="fr">
+          <div className="fg">
+            <label>Client</label>
+            <select value={selectedClient} onChange={(e) => setSelectedClient(e.target.value)}>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="fg">
+            <label>Month</label>
+            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="pb">
+        <div className="g3">
+          <div className="scard" style={{ "--sc": "var(--accent)" }}>
+            <div className="sval">{fmt(revenue)}</div>
+            <div className="slbl">Total Revenue</div>
+          </div>
+          <div className="scard" style={{ "--sc": "var(--danger)" }}>
+            <div className="sval">{fmt(totalExpenses)}</div>
+            <div className="slbl">Total Expenses</div>
+          </div>
+          <div className="scard" style={{ "--sc": netProfit >= 0 ? "var(--accent)" : "var(--danger)" }}>
+            <div className="sval">{fmt(netProfit)}</div>
+            <div className="slbl">Net Profit</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="pb">
+        <div className="card">
+          <div className="ctit">Profit Breakdown</div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <tbody>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>Total Sales Revenue</td>
+                <td style={{ padding: "12px 14px", textAlign: "right", fontFamily: "Syne", fontWeight: 700, color: "var(--accent)" }}>{fmt(revenue)}</td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                <td style={{ padding: "12px 14px" }}>Vendor Purchases</td>
+                <td style={{ padding: "12px 14px", textAlign: "right", color: "var(--muted)" }}>- {fmt(purchasesTotal)}</td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                <td style={{ padding: "12px 14px" }}>Return Adjustments</td>
+                <td style={{ padding: "12px 14px", textAlign: "right", color: "var(--muted)" }}>- {fmt(returnsTotal)}</td>
+              </tr>
+              <tr style={{ borderBottom: "2px solid var(--accent)" }}>
+                <td style={{ padding: "12px 14px" }}>Employee Salaries</td>
+                <td style={{ padding: "12px 14px", textAlign: "right", color: "var(--muted)" }}>- {fmt(salariesTotal)}</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "12px 14px", fontWeight: 700, fontSize: 14 }}>NET PROFIT / LOSS</td>
+                <td style={{ padding: "12px 14px", textAlign: "right", fontFamily: "Syne", fontWeight: 800, fontSize: 16, color: netProfit >= 0 ? "var(--accent)" : "var(--danger)" }}>{fmt(netProfit)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="pb">
+        <div className="g2">
+          <div className="card">
+            <div className="ctit">Summary</div>
+            <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+              <div>Sales Entries: <strong>{monthSales.length}</strong></div>
+              <div>Purchase Orders: <strong>{monthPurchases.length}</strong></div>
+              <div>Returns: <strong>{monthReturns.length}</strong></div>
+              <div>Staff Count: <strong>{clientEmployees.length}</strong></div>
+              {revenue > 0 && <div>Avg Sale Value: <strong>{fmt(revenue / monthSales.length)}</strong></div>}
+              {purchasesTotal > 0 && <div>Avg Purchase: <strong>{fmt(purchasesTotal / monthPurchases.length)}</strong></div>}
+            </div>
+          </div>
+          <div className="card">
+            <div className="ctit">Expense Breakdown</div>
+            <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+              <div>Purchases: <strong className="ta">{fmt(purchasesTotal)}</strong> ({totalExpenses > 0 ? ((purchasesTotal / totalExpenses) * 100).toFixed(1) : 0}%)</div>
+              <div>Returns: <strong className="ta">{fmt(returnsTotal)}</strong> ({totalExpenses > 0 ? ((returnsTotal / totalExpenses) * 100).toFixed(1) : 0}%)</div>
+              <div>Salaries: <strong className="ta">{fmt(salariesTotal)}</strong> ({totalExpenses > 0 ? ((salariesTotal / totalExpenses) * 100).toFixed(1) : 0}%)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MANAGE RETURNS PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 function ManageReturnsPage({ returns, clients, onDelete }) {
@@ -1940,6 +2359,8 @@ export default function App() {
   const [activePage,   setActivePage]   = useState(null);
   const [purchases,    setPurchases]    = useState([]);
   const [returns,      setReturns]      = useState([]);
+  const [employees,    setEmployees]    = useState([]);
+  const [sales,        setSales]        = useState([]);
   const [clients,      setClients]      = useState([]);
   const getClient = (id) => clients.find(c => c.id === id);
   const [groceryItems, setGroceryItems] = useState([]);
@@ -1951,6 +2372,9 @@ export default function App() {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
+      const stored = localStorage.getItem("cf_user");
+      const user = stored ? JSON.parse(stored) : null;
+
       const [cls, items, purs, rets] = await Promise.all([
         api("/clients"),
         api("/items"),
@@ -1961,11 +2385,17 @@ export default function App() {
       setGroceryItems(items);
       setPurchases(purs);
       setReturns(rets);
-      // Load users only for admin
-      const stored = localStorage.getItem("cf_user");
-      if (stored && JSON.parse(stored).role === "admin") {
-        const usrs = await api("/users");
+
+      // Load admin-only data
+      if (user && user.role === "admin") {
+        const [usrs, emps, sls] = await Promise.all([
+          api("/users"),
+          api("/employees"),
+          api("/sales"),
+        ]);
         setUsers(usrs);
+        setEmployees(emps);
+        setSales(sls);
       }
     } catch (err) {
       setGlobalError("Could not load data from server: " + err.message);
@@ -1986,7 +2416,7 @@ export default function App() {
     localStorage.removeItem("cf_user");
     setCurrentUser(null);
     setActivePage(null);
-    setPurchases([]); setClients([]); setGroceryItems([]); setUsers([]); setReturns([]);
+    setPurchases([]); setClients([]); setGroceryItems([]); setUsers([]); setReturns([]); setEmployees([]); setSales([]);
   };
 
   // Restore session on page refresh
@@ -2082,6 +2512,36 @@ export default function App() {
     setReturns((prev) => prev.filter((r) => r.id !== id));
   };
 
+  // ── Employees CRUD ────────────────────────────────────────
+  const addEmployee = async (e) => {
+    const saved = await api("/employees", { method: "POST", body: JSON.stringify(e) });
+    setEmployees((prev) => [...prev, saved]);
+    return saved;
+  };
+  const deleteEmployee = async (id) => {
+    await api("/employees/" + id, { method: "DELETE" });
+    setEmployees((prev) => prev.filter((e) => e.id !== id));
+  };
+  const editEmployee = async (e) => {
+    const updated = await api("/employees/" + e.id, { method: "PUT", body: JSON.stringify(e) });
+    setEmployees((prev) => prev.map((x) => x.id === e.id ? updated : x));
+  };
+
+  // ── Sales CRUD ────────────────────────────────────────────
+  const addSale = async (s) => {
+    const saved = await api("/sales", { method: "POST", body: JSON.stringify(s) });
+    setSales((prev) => [saved, ...prev]);
+    return saved;
+  };
+  const deleteSale = async (id) => {
+    await api("/sales/" + id, { method: "DELETE" });
+    setSales((prev) => prev.filter((s) => s.id !== id));
+  };
+  const editSale = async (s) => {
+    const updated = await api("/sales/" + s.id, { method: "PUT", body: JSON.stringify(s) });
+    setSales((prev) => prev.map((x) => x.id === s.id ? updated : x));
+  };
+
   const renderPage = () => {
     if (loading) return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", color: "var(--muted)", flexDirection: "column", gap: 16 }}>
@@ -2102,6 +2562,9 @@ export default function App() {
         case "manage-users":     return <ManageUsersPage   users={users} clients={clients} onAdd={addUser} onDelete={deleteUser} onEdit={editUser} />;
         case "manage-purchases": return <ManagePurchasesPage purchases={purchases} clients={clients} groceryItems={groceryItems} onDelete={deletePurchase} onEdit={editPurchase} />;
         case "manage-returns":   return <ManageReturnsPage returns={returns} clients={clients} onDelete={deleteReturn} />;
+        case "manage-employees": return <ManageEmployeesPage employees={employees} clients={clients} onAdd={addEmployee} onDelete={deleteEmployee} onEdit={editEmployee} />;
+        case "manage-sales":     return <ManageSalesPage sales={sales} clients={clients} onAdd={addSale} onDelete={deleteSale} onEdit={editSale} />;
+        case "mis-report":       return <MISReportPage purchases={purchases} returns={returns} employees={employees} sales={sales} clients={clients} />;
         default:          return <AdminDashboard purchases={purchases} clients={clients} />;
       }
     } else {
