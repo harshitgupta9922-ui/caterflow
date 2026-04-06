@@ -334,12 +334,25 @@ app.post('/api/purchases', authMiddleware, async (req, res) => {
   }
 });
 
-// PUT /api/purchases/:id
-app.put('/api/purchases/:id', authMiddleware, adminOnly, async (req, res) => {
+// PUT /api/purchases/:id — admin or vendor can edit their own
+app.put('/api/purchases/:id', authMiddleware, async (req, res) => {
   const conn = await db.getConnection();
   try {
     const { clientId, date, peopleCount, items } = req.body;
     if (!items?.length) return err(res, 'Items required');
+
+    // Check ownership for vendors
+    const [purchase] = await db.query('SELECT added_by, client_id FROM purchases WHERE id = ?', [req.params.id]);
+    if (!purchase[0]) return err(res, 'Purchase not found', 404);
+
+    if (req.user.role === 'vendor') {
+      if (purchase[0].added_by !== req.user.username) {
+        return err(res, 'You can only edit your own entries', 403);
+      }
+      if (clientId !== req.user.clientId) {
+        return err(res, 'You can only edit entries for your assigned client', 403);
+      }
+    }
 
     const totalAmount = items.reduce((s, i) => s + (i.qty * i.rate), 0);
     await conn.beginTransaction();
@@ -361,18 +374,29 @@ app.put('/api/purchases/:id', authMiddleware, adminOnly, async (req, res) => {
     ok(res, { id: parseInt(req.params.id), clientId, date, peopleCount, totalAmount, items });
   } catch (e) {
     await conn.rollback();
+    console.error(e);
     err(res, 'Server error', 500);
   } finally {
     conn.release();
   }
 });
 
-// DELETE /api/purchases/:id
-app.delete('/api/purchases/:id', authMiddleware, adminOnly, async (req, res) => {
+// DELETE /api/purchases/:id — admin or vendor can delete their own
+app.delete('/api/purchases/:id', authMiddleware, async (req, res) => {
   try {
+    const [purchase] = await db.query('SELECT added_by FROM purchases WHERE id = ?', [req.params.id]);
+    if (!purchase[0]) return err(res, 'Purchase not found', 404);
+
+    if (req.user.role === 'vendor' && purchase[0].added_by !== req.user.username) {
+      return err(res, 'You can only delete your own entries', 403);
+    }
+
     await db.query('DELETE FROM purchases WHERE id=?', [req.params.id]);
     ok(res, { deleted: req.params.id });
-  } catch (e) { err(res, 'Server error', 500); }
+  } catch (e) {
+    console.error(e);
+    err(res, 'Server error', 500);
+  }
 });
 
 // ── HEALTH CHECK ──────────────────────────────────────────────
