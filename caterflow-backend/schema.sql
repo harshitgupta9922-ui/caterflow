@@ -63,6 +63,67 @@ CREATE TABLE IF NOT EXISTS purchase_items (
   FOREIGN KEY (grocery_id)  REFERENCES grocery_items(id) ON DELETE CASCADE
 );
 
+-- ── RETURN ENTRIES ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS return_entries (
+  id           INT           PRIMARY KEY AUTO_INCREMENT,
+  client_id    VARCHAR(36)   NOT NULL,
+  date         DATE          NOT NULL,
+  people_count INT           DEFAULT 0,
+  total_amount DECIMAL(10,2) DEFAULT 0,
+  added_by     VARCHAR(100)  NOT NULL,
+  created_at   DATETIME      DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  INDEX idx_client (client_id)
+);
+
+-- ── RETURN ITEMS ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS return_items (
+  id        INT           PRIMARY KEY AUTO_INCREMENT,
+  return_id INT           NOT NULL,
+  grocery_id VARCHAR(36)  NOT NULL,
+  qty       DECIMAL(10,2) NOT NULL,
+  rate      DECIMAL(10,2) NOT NULL,
+  total     DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (return_id) REFERENCES return_entries(id) ON DELETE CASCADE
+);
+
+-- ── EMPLOYEES ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS employees (
+  id              INT           PRIMARY KEY AUTO_INCREMENT,
+  client_id       VARCHAR(36)   NOT NULL,
+  name            VARCHAR(255)  NOT NULL,
+  position        VARCHAR(100),
+  monthly_salary  DECIMAL(10,2) NOT NULL DEFAULT 0,
+  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  INDEX idx_client (client_id)
+);
+
+-- ── SALES ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sales (
+  id          INT           PRIMARY KEY AUTO_INCREMENT,
+  client_id   VARCHAR(36)   NOT NULL,
+  date        DATE          NOT NULL,
+  total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  description VARCHAR(255),
+  entry_type  ENUM('lump_sum', 'detailed') NOT NULL DEFAULT 'lump_sum',
+  created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  INDEX idx_client (client_id),
+  INDEX idx_date (date)
+);
+
+-- ── SALES ITEMS ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sales_items (
+  id        INT           PRIMARY KEY AUTO_INCREMENT,
+  sale_id   INT           NOT NULL,
+  item_name VARCHAR(255)  NOT NULL,
+  qty       DECIMAL(10,2) NOT NULL,
+  rate      DECIMAL(10,2) NOT NULL,
+  total     DECIMAL(12,2) NOT NULL,
+  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+);
+
 -- ============================================================
 -- SEED DATA
 -- ============================================================
