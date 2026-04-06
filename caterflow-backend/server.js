@@ -1,6 +1,7 @@
 // ============================================================
 // CaterFlow Backend — server.js
 // Node.js + Express + MySQL
+// Updated: Apr 6, 2026 - Profit MIS Feature
 // ============================================================
 
 require('dotenv').config();
