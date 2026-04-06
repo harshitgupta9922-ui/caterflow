@@ -233,6 +233,7 @@ function Sidebar({ currentUser, activePage, onNavigate, onLogout }) {
     { key: "vendor-dashboard", label: "My Dashboard"   },
     { key: "add-purchase",     label: "Add Daily Entry" },
     { key: "my-purchases",     label: "My Entries"     },
+    { key: "manage-my-purchases", label: "Purchase Entries" },
   ];
 
   return (
@@ -1875,6 +1876,7 @@ export default function App() {
         case "vendor-dashboard": return <VendorDashboard  currentUser={currentUser} purchases={purchases} clients={clients} />;
         case "add-purchase":     return <AddPurchasePage  currentUser={currentUser} clients={clients} groceryItems={groceryItems} onAdd={addPurchase} />;
         case "my-purchases":     return <MyPurchasesPage  currentUser={currentUser} purchases={purchases} />;
+        case "manage-my-purchases": return <ManagePurchasesPage purchases={purchases.filter(p => p.userId === currentUser.id)} clients={clients} groceryItems={groceryItems} onDelete={deletePurchase} onEdit={editPurchase} />;
         default:                 return <VendorDashboard  currentUser={currentUser} purchases={purchases} clients={clients} />;
       }
     }
