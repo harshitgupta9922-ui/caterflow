@@ -380,3 +380,88 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }
 
 // ── START ─────────────────────────────────────────────────────
 app.listen(PORT, () => console.log(`🚀 CaterFlow API running on port ${PORT}`));
+
+// ============================================================
+// RETURN ENTRIES
+// ============================================================
+
+// GET /api/returns
+app.get('/api/returns', authMiddleware, async (req, res) => {
+  try {
+    const { clientId, month } = req.query;
+    let sql = `
+      SELECT r.*, GROUP_CONCAT(
+        JSON_OBJECT(
+          'groceryId', ri.grocery_id,
+          'qty',       ri.qty,
+          'rate',      ri.rate,
+          'total',     ri.total
+        )
+      ) as items_json
+      FROM return_entries r
+      LEFT JOIN return_items ri ON ri.return_id = r.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (req.user.role === 'vendor') {
+      sql += ' AND r.added_by = ?'; params.push(req.user.username);
+    } else {
+      if (clientId && clientId !== 'ALL') { sql += ' AND r.client_id = ?'; params.push(clientId); }
+    }
+    if (month) { sql += ' AND DATE_FORMAT(r.date, "%Y-%m") = ?'; params.push(month); }
+    sql += ' GROUP BY r.id ORDER BY r.date DESC, r.id DESC';
+
+    const [rows] = await db.query(sql, params);
+    const returns = rows.map((r) => ({
+      id:          r.id,
+      clientId:    r.client_id,
+      date:        r.date.toISOString().split('T')[0],
+      totalAmount: parseFloat(r.total_amount),
+      addedBy:     r.added_by,
+      items:       r.items_json
+        ? r.items_json.split('},{').map((s) => {
+            try { return JSON.parse(s.startsWith('{') ? s : '{' + s); } catch { return null; }
+          }).filter(Boolean).map((i) => ({ ...i, qty: parseFloat(i.qty), rate: parseFloat(i.rate), total: parseFloat(i.total) }))
+        : [],
+    }));
+    ok(res, returns);
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// POST /api/returns
+app.post('/api/returns', authMiddleware, async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const { clientId, date, items } = req.body;
+    if (!clientId || !date || !items?.length) return err(res, 'clientId, date and items required');
+    const totalAmount = items.reduce((s, i) => s + (i.qty * i.rate), 0);
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      'INSERT INTO return_entries (client_id, date, total_amount, added_by) VALUES (?, ?, ?, ?)',
+      [clientId, date, totalAmount, req.user.username]
+    );
+    const returnId = result.insertId;
+    for (const item of items) {
+      await conn.query(
+        'INSERT INTO return_items (return_id, grocery_id, qty, rate, total) VALUES (?, ?, ?, ?, ?)',
+        [returnId, item.groceryId, item.qty, item.rate, item.qty * item.rate]
+      );
+    }
+    await conn.commit();
+    ok(res, { id: returnId, clientId, date, totalAmount, addedBy: req.user.username, items });
+  } catch (e) {
+    await conn.rollback();
+    console.error(e);
+    err(res, 'Server error', 500);
+  } finally {
+    conn.release();
+  }
+});
+
+// DELETE /api/returns/:id
+app.delete('/api/returns/:id', authMiddleware, async (req, res) => {
+  try {
+    await db.query('DELETE FROM return_entries WHERE id=?', [req.params.id]);
+    ok(res, { deleted: req.params.id });
+  } catch (e) { err(res, 'Server error', 500); }
+});
