@@ -403,6 +403,53 @@ app.delete('/api/purchases/:id', authMiddleware, async (req, res) => {
 // ── HEALTH CHECK ──────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
+// ── SETUP DATABASE ────────────────────────────────────────────
+app.post('/api/setup', async (req, res) => {
+  try {
+    const tables = [
+      `CREATE TABLE IF NOT EXISTS employees (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        client_id VARCHAR(36) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        position VARCHAR(100),
+        monthly_salary DECIMAL(10,2) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+        INDEX idx_client (client_id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS sales (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        client_id VARCHAR(36) NOT NULL,
+        date DATE NOT NULL,
+        total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+        description VARCHAR(255),
+        entry_type ENUM('lump_sum', 'detailed') NOT NULL DEFAULT 'lump_sum',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+        INDEX idx_client (client_id),
+        INDEX idx_date (date)
+      )`,
+      `CREATE TABLE IF NOT EXISTS sales_items (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        sale_id INT NOT NULL,
+        item_name VARCHAR(255) NOT NULL,
+        qty DECIMAL(10,2) NOT NULL,
+        rate DECIMAL(10,2) NOT NULL,
+        total DECIMAL(12,2) NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+      )`
+    ];
+
+    for (const sql of tables) {
+      await db.query(sql);
+    }
+    res.json({ success: true, message: 'Database tables created successfully' });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── START ─────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 CaterFlow API running on 0.0.0.0:${PORT}`));
 
