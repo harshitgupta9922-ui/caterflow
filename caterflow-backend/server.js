@@ -489,3 +489,218 @@ app.delete('/api/returns/:id', authMiddleware, async (req, res) => {
     ok(res, { deleted: req.params.id });
   } catch (e) { err(res, 'Server error', 500); }
 });
+
+// ============================================================
+// EMPLOYEES
+// ============================================================
+
+// GET /api/employees - admin only
+app.get('/api/employees', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { clientId } = req.query;
+    let sql = 'SELECT id, client_id as clientId, name, position, monthly_salary as monthlySalary FROM employees WHERE 1=1';
+    const params = [];
+    if (clientId) { sql += ' AND client_id = ?'; params.push(clientId); }
+    sql += ' ORDER BY client_id, name';
+    const [rows] = await db.query(sql, params);
+    ok(res, rows);
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// POST /api/employees - admin only
+app.post('/api/employees', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { clientId, name, position, monthlySalary } = req.body;
+    if (!clientId || !name) return err(res, 'clientId and name required');
+    const [result] = await db.query(
+      'INSERT INTO employees (client_id, name, position, monthly_salary) VALUES (?, ?, ?, ?)',
+      [clientId, name, position || null, monthlySalary || 0]
+    );
+    ok(res, { id: result.insertId, clientId, name, position, monthlySalary: monthlySalary || 0 }, 201);
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// PUT /api/employees/:id - admin only
+app.put('/api/employees/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { name, position, monthlySalary } = req.body;
+    if (!name) return err(res, 'name required');
+    await db.query(
+      'UPDATE employees SET name = ?, position = ?, monthly_salary = ? WHERE id = ?',
+      [name, position || null, monthlySalary || 0, req.params.id]
+    );
+    const [rows] = await db.query('SELECT id, client_id as clientId, name, position, monthly_salary as monthlySalary FROM employees WHERE id = ?', [req.params.id]);
+    ok(res, rows[0]);
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// DELETE /api/employees/:id - admin only
+app.delete('/api/employees/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    await db.query('DELETE FROM employees WHERE id = ?', [req.params.id]);
+    ok(res, { deleted: req.params.id });
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// ============================================================
+// SALES
+// ============================================================
+
+// GET /api/sales - admin only
+app.get('/api/sales', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { clientId, month } = req.query;
+    let sql = `SELECT s.*, GROUP_CONCAT(
+      JSON_OBJECT(
+        'itemName', si.item_name,
+        'qty', si.qty,
+        'rate', si.rate,
+        'total', si.total
+      )
+    ) as items_json
+    FROM sales s
+    LEFT JOIN sales_items si ON si.sale_id = s.id
+    WHERE 1=1`;
+    const params = [];
+    if (clientId) { sql += ' AND s.client_id = ?'; params.push(clientId); }
+    if (month) { sql += ' AND DATE_FORMAT(s.date, "%Y-%m") = ?'; params.push(month); }
+    sql += ' GROUP BY s.id ORDER BY s.date DESC';
+
+    const [rows] = await db.query(sql, params);
+    const sales = rows.map((r) => ({
+      id: r.id,
+      clientId: r.client_id,
+      date: r.date.toISOString().split('T')[0],
+      totalAmount: parseFloat(r.total_amount),
+      description: r.description,
+      entryType: r.entry_type,
+      items: r.items_json
+        ? r.items_json.split('},{').map((s) => {
+            try { return JSON.parse(s.startsWith('{') ? s : '{' + s); } catch { return null; }
+          }).filter(Boolean).map((i) => ({ ...i, qty: parseFloat(i.qty), rate: parseFloat(i.rate), total: parseFloat(i.total) }))
+        : []
+    }));
+    ok(res, sales);
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// POST /api/sales - admin only
+app.post('/api/sales', authMiddleware, adminOnly, async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const { clientId, date, totalAmount, description, entryType, items } = req.body;
+    if (!clientId || !date) return err(res, 'clientId and date required');
+
+    const finalAmount = entryType === 'detailed' && items
+      ? items.reduce((s, i) => s + (i.qty * i.rate), 0)
+      : (totalAmount || 0);
+
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      'INSERT INTO sales (client_id, date, total_amount, description, entry_type) VALUES (?, ?, ?, ?, ?)',
+      [clientId, date, finalAmount, description || null, entryType || 'lump_sum']
+    );
+
+    if (entryType === 'detailed' && items && items.length > 0) {
+      for (const item of items) {
+        await conn.query(
+          'INSERT INTO sales_items (sale_id, item_name, qty, rate, total) VALUES (?, ?, ?, ?, ?)',
+          [result.insertId, item.itemName, item.qty, item.rate, item.qty * item.rate]
+        );
+      }
+    }
+    await conn.commit();
+    ok(res, { id: result.insertId, clientId, date, totalAmount: finalAmount, description, entryType, items: items || [] }, 201);
+  } catch (e) {
+    await conn.rollback();
+    console.error(e);
+    err(res, 'Server error', 500);
+  } finally {
+    conn.release();
+  }
+});
+
+// DELETE /api/sales/:id - admin only
+app.delete('/api/sales/:id', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    await db.query('DELETE FROM sales WHERE id = ?', [req.params.id]);
+    ok(res, { deleted: req.params.id });
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// ============================================================
+// MIS (Management Information System)
+// ============================================================
+
+// GET /api/mis - admin only
+app.get('/api/mis', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { clientId, month } = req.query;
+    if (!clientId || !month) return err(res, 'clientId and month required');
+
+    // Get sales total
+    const [saleRows] = await db.query(
+      'SELECT SUM(total_amount) as total FROM sales WHERE client_id = ? AND DATE_FORMAT(date, "%Y-%m") = ?',
+      [clientId, month]
+    );
+    const revenue = parseFloat(saleRows[0]?.total || 0);
+
+    // Get purchases total
+    const [purchaseRows] = await db.query(
+      'SELECT SUM(total_amount) as total FROM purchases WHERE client_id = ? AND DATE_FORMAT(date, "%Y-%m") = ?',
+      [clientId, month]
+    );
+    const purchases = parseFloat(purchaseRows[0]?.total || 0);
+
+    // Get returns total
+    const [returnRows] = await db.query(
+      'SELECT SUM(total_amount) as total FROM return_entries WHERE client_id = ? AND DATE_FORMAT(date, "%Y-%m") = ?',
+      [clientId, month]
+    );
+    const returns = parseFloat(returnRows[0]?.total || 0);
+
+    // Get salaries total
+    const [salaryRows] = await db.query(
+      'SELECT SUM(monthly_salary) as total FROM employees WHERE client_id = ?',
+      [clientId]
+    );
+    const salaries = parseFloat(salaryRows[0]?.total || 0);
+
+    const totalExpenses = purchases + returns + salaries;
+    const netProfit = revenue - totalExpenses;
+
+    // Get counts
+    const [countRows] = await db.query(`
+      SELECT
+        (SELECT COUNT(*) FROM sales WHERE client_id = ? AND DATE_FORMAT(date, "%Y-%m") = ?) as salesCount,
+        (SELECT COUNT(*) FROM purchases WHERE client_id = ? AND DATE_FORMAT(date, "%Y-%m") = ?) as purchaseCount,
+        (SELECT COUNT(*) FROM return_entries WHERE client_id = ? AND DATE_FORMAT(date, "%Y-%m") = ?) as returnCount,
+        (SELECT COUNT(*) FROM employees WHERE client_id = ?) as employeeCount
+    `, [clientId, month, clientId, month, clientId, month, clientId]);
+
+    ok(res, {
+      clientId,
+      month,
+      revenue,
+      expenses: {
+        purchases,
+        returns,
+        salaries
+      },
+      totalExpenses,
+      netProfit,
+      details: {
+        salesCount: countRows[0].salesCount || 0,
+        purchaseCount: countRows[0].purchaseCount || 0,
+        returnCount: countRows[0].returnCount || 0,
+        employeeCount: countRows[0].employeeCount || 0
+      }
+    });
+  } catch (e) { console.error(e); err(res, 'Server error', 500); }
+});
+
+// ── HEALTH CHECK ──────────────────────────────────────────────
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+
+// ── START ─────────────────────────────────────────────────────
+app.listen(PORT, () => console.log(`🚀 CaterFlow API running on port ${PORT}`));
