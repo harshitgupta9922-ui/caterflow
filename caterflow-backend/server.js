@@ -13,7 +13,7 @@ const jwt        = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 
 const app  = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 
 // ── MIDDLEWARE ────────────────────────────────────────────────
 app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
@@ -407,7 +407,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 CaterFlow API running on 0.0.0.0:${PORT}`));
 
 // ============================================================
-// RETURN ENTRIES
+// RETURN ENTRIES (ENDPOINTS BELOW)
 // ============================================================
 
 // GET /api/returns
@@ -742,6 +742,7 @@ app.get('/api/mis', authMiddleware, adminOnly, async (req, res) => {
 
 // ── HEALTH CHECK ──────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+
 
 // ── START ─────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 CaterFlow API running on 0.0.0.0:${PORT}`));
