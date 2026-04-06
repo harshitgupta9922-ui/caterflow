@@ -371,7 +371,7 @@ app.put('/api/purchases/:id', authMiddleware, async (req, res) => {
     }
 
     await conn.commit();
-    ok(res, { id: parseInt(req.params.id), clientId, date, peopleCount, totalAmount, items });
+    ok(res, { id: parseInt(req.params.id), clientId, date, peopleCount, totalAmount, addedBy: req.user.username, items });
   } catch (e) {
     await conn.rollback();
     console.error(e);
