@@ -114,10 +114,18 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-// PUT /api/purchases/:id — admin only
-router.put('/:id', authMiddleware, adminOnly, async (req, res) => {
+// PUT /api/purchases/:id — admin or vendor can edit their own
+router.put('/:id', authMiddleware, async (req, res) => {
   const { clientId, date, peopleCount, items } = req.body;
   try {
+    // Check ownership for vendors
+    const [purchase] = await db.query('SELECT added_by FROM purchases WHERE id = ?', [req.params.id]);
+    if (!purchase[0]) return res.status(404).json({ error: 'Purchase not found' });
+
+    if (req.user.role === 'vendor' && purchase[0].added_by !== req.user.username) {
+      return res.status(403).json({ error: 'You can only edit your own entries' });
+    }
+
     const totalAmount = items.reduce((s, i) => s + (i.qty * i.rate), 0);
     await db.query(
       'UPDATE purchases SET client_id = ?, date = ?, people_count = ?, total_amount = ? WHERE id = ?',
@@ -139,9 +147,16 @@ router.put('/:id', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-// DELETE /api/purchases/:id — admin only
-router.delete('/:id', authMiddleware, adminOnly, async (req, res) => {
+// DELETE /api/purchases/:id — admin or vendor can delete their own
+router.delete('/:id', authMiddleware, async (req, res) => {
   try {
+    const [purchase] = await db.query('SELECT added_by FROM purchases WHERE id = ?', [req.params.id]);
+    if (!purchase[0]) return res.status(404).json({ error: 'Purchase not found' });
+
+    if (req.user.role === 'vendor' && purchase[0].added_by !== req.user.username) {
+      return res.status(403).json({ error: 'You can only delete your own entries' });
+    }
+
     await db.query('DELETE FROM purchases WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
