@@ -1685,9 +1685,12 @@ function EditPurchaseModal({ purchase, clients, groceryItems, onSave, onClose })
     setBusy(true);
     setError("");
     try {
-      await onSave(p);
-      onClose();
+      console.log("Saving purchase:", p);
+      const result = await onSave(p);
+      console.log("Save result:", result);
+      setTimeout(() => onClose(), 500);
     } catch (err) {
+      console.error("Save error:", err);
       setError(err.message || "Failed to save changes");
       setBusy(false);
     }
