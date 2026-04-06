@@ -1659,6 +1659,8 @@ function ManagePurchasesPage({ purchases, clients, groceryItems, onDelete, onEdi
 
 function EditPurchaseModal({ purchase, clients, groceryItems, onSave, onClose }) {
   const [p, setP] = useState(purchase);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const updateItem = (i, field, val) => {
     const items = [...p.items];
@@ -1675,10 +1677,27 @@ function EditPurchaseModal({ purchase, clients, groceryItems, onSave, onClose })
     setP({ ...p, items });
   };
 
+  const handleSave = async () => {
+    if (!p.clientId || !p.date || p.items.length === 0) {
+      setError("Please fill all fields and add at least one item");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await onSave(p);
+      onClose();
+    } catch (err) {
+      setError(err.message || "Failed to save changes");
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="mo" onClick={onClose}>
       <div className="mb" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
         <div className="mbt">Edit Purchase Entry</div>
+        {error && <div className="al ale" style={{ marginBottom: 16 }}>{error}</div>}
 
         <div className="g2" style={{ marginBottom: 16 }}>
           <div className="fg">
@@ -1717,8 +1736,8 @@ function EditPurchaseModal({ purchase, clients, groceryItems, onSave, onClose })
         <div className="df jb aic">
           <span className="tm">Total: <strong className="ta">{fmt(p.totalAmount)}</strong></span>
           <div className="df" style={{ gap: 10 }}>
-            <button className="btn btn-s" onClick={onClose}>Cancel</button>
-            <button className="btn btn-p" onClick={() => onSave(p)}>Save Changes</button>
+            <button className="btn btn-s" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="btn btn-p" onClick={handleSave} disabled={busy}>{busy ? "Saving..." : "Save Changes"}</button>
           </div>
         </div>
       </div>
