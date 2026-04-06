@@ -2013,8 +2013,14 @@ export default function App() {
     setPurchases((prev) => prev.filter((p) => p.id !== id));
   };
   const editPurchase = async (p) => {
-    const updated = await api("/purchases/" + p.id, { method: "PUT", body: JSON.stringify(p) });
-    setPurchases((prev) => prev.map((x) => x.id === p.id ? updated : x));
+    try {
+      const updated = await api("/purchases/" + p.id, { method: "PUT", body: JSON.stringify(p) });
+      setPurchases((prev) => prev.map((x) => x.id === p.id ? updated : x));
+      return updated;
+    } catch (err) {
+      console.error("Edit error:", err);
+      throw err;
+    }
   };
 
   // ── Client CRUD ───────────────────────────────────────────
