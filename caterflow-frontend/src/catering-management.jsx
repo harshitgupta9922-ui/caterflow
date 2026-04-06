@@ -228,12 +228,15 @@ function Sidebar({ currentUser, activePage, onNavigate, onLogout }) {
     { key: "manage-items",     label: "Grocery Items"    },
     { key: "manage-users",     label: "Users / Vendors"  },
     { key: "manage-purchases", label: "Purchase Entries" },
+    { key: "manage-returns",   label: "Return Entries"   },
   ];
   const vendorNav = [
     { key: "vendor-dashboard", label: "My Dashboard"   },
     { key: "add-purchase",     label: "Add Daily Entry" },
     { key: "my-purchases",     label: "My Entries"     },
     { key: "manage-my-purchases", label: "Purchase Entries" },
+    { key: "add-return",       label: "Add Return Entry" },
+    { key: "my-returns",       label: "My Returns"      },
   ];
 
   return (
@@ -1723,10 +1726,198 @@ function EditPurchaseModal({ purchase, clients, groceryItems, onSave, onClose })
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ADD RETURN ENTRY PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function AddReturnPage({ currentUser, clients, groceryItems, onAdd }) {
+  const [r, setR] = useState({
+    clientId: clients[0]?.id || "",
+    date: todayStr(),
+    items: [{ groceryId: groceryItems[0]?.id || "", qty: 0, rate: 0, total: 0 }],
+    totalAmount: 0,
+  });
+  const [busy, setBusy] = useState(false);
+
+  const updateItem = (i, field, val) => {
+    const items = [...r.items];
+    items[i] = { ...items[i], [field]: val };
+    items[i].total = (parseFloat(items[i].qty) || 0) * (parseFloat(items[i].rate) || 0);
+    setR({ ...r, items, totalAmount: items.reduce((s, it) => s + it.total, 0) });
+  };
+  const removeItem = (i) => {
+    const items = r.items.filter((_, idx) => idx !== i);
+    setR({ ...r, items, totalAmount: items.reduce((s, it) => s + it.total, 0) });
+  };
+  const addItem = () => {
+    const items = [...r.items, { groceryId: groceryItems[0]?.id || "", qty: 0, rate: 0, total: 0 }];
+    setR({ ...r, items });
+  };
+  const handleAdd = async () => {
+    if (!r.clientId || !r.date || r.items.length === 0) { alert("Please fill all fields"); return; }
+    setBusy(true);
+    try {
+      await onAdd(r);
+      setR({
+        clientId: clients[0]?.id || "",
+        date: todayStr(),
+        items: [{ groceryId: groceryItems[0]?.id || "", qty: 0, rate: 0, total: 0 }],
+        totalAmount: 0,
+      });
+      alert("Return entry added!");
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div>
+      <div className="ph"><div className="ptit">Add Return Entry</div><div className="psub">Record items returned from client</div></div>
+      <div className="pb">
+        <div className="card">
+          <div className="g2" style={{ marginBottom: 16 }}>
+            <div className="fg">
+              <label>Date</label>
+              <input type="date" value={r.date} onChange={(e) => setR({ ...r, date: e.target.value })} />
+            </div>
+            <div className="fg">
+              <label>Client</label>
+              <select value={r.clientId} onChange={(e) => setR({ ...r, clientId: e.target.value })}>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ fontFamily: "Syne", fontWeight: 700, fontSize: 13, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Items Returned</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 90px 32px", gap: 8, marginBottom: 8, fontSize: 11, color: "var(--muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+            <span>Item</span><span>Qty</span><span>Rate</span><span></span>
+          </div>
+          {r.items.map((item, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 90px 32px", gap: 8, marginBottom: 8, alignItems: "center" }}>
+              <select value={item.groceryId} onChange={(e) => updateItem(i, "groceryId", e.target.value)}>
+                {groceryItems.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.unit})</option>)}
+              </select>
+              <input type="number" value={item.qty}  onChange={(e) => updateItem(i, "qty",  e.target.value)} style={{ padding: "8px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "Epilogue", fontSize: 13 }} />
+              <input type="number" value={item.rate} onChange={(e) => updateItem(i, "rate", e.target.value)} style={{ padding: "8px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "Epilogue", fontSize: 13 }} />
+              <button className="btn btn-d btn-sm" style={{ padding: "6px 8px" }} onClick={() => removeItem(i)} disabled={r.items.length === 1}>x</button>
+            </div>
+          ))}
+          <button className="btn btn-s btn-sm" onClick={addItem} style={{ marginBottom: 16 }}>+ Add Item</button>
+
+          <hr className="div" />
+          <div className="df jb aic">
+            <span className="tm">Total Return: <strong className="ta">{fmt(r.totalAmount)}</strong></span>
+            <button className="btn btn-p" onClick={handleAdd} disabled={busy}>{busy ? "Adding..." : "Add Return Entry"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MY RETURNS PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function MyReturnsPage({ currentUser, returns }) {
+  const myReturns = returns.filter((r) => r.addedBy === currentUser.username).sort((a, b) => b.date.localeCompare(a.date));
+  const totalReturned = myReturns.reduce((s, r) => s + r.totalAmount, 0);
+
+  return (
+    <div>
+      <div className="ph"><div className="ptit">My Return Entries</div><div className="psub">Items returned from clients</div></div>
+      <div className="pb">
+        <div className="sgrid mb24">
+          <div className="scard" style={{ "--sc": "var(--accent)" }}>
+            <div className="sval">{myReturns.length}</div>
+            <div className="slbl">Total Returns</div>
+          </div>
+          <div className="scard" style={{ "--sc": "var(--info)" }}>
+            <div className="sval">{fmt(totalReturned)}</div>
+            <div className="slbl">Total Amount Returned</div>
+          </div>
+        </div>
+        {myReturns.length === 0 ? (
+          <div className="card emp"><div className="eic">📋</div>No returns yet</div>
+        ) : (
+          <div className="card">
+            <div className="tw">
+              <table>
+                <thead><tr><th>Date</th><th>Client</th><th>Items</th><th>Amount</th></tr></thead>
+                <tbody>
+                  {myReturns.map((r) => (
+                    <tr key={r.id}>
+                      <td>{fmtDate(r.date)}</td>
+                      <td>{r.clientId}</td>
+                      <td>{r.items.length} items</td>
+                      <td className="ta">{fmt(r.totalAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MANAGE RETURNS PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function ManageReturnsPage({ returns, clients, onDelete }) {
+  const [editR, setEditR] = useState(null);
+  const getClient = (id) => clients.find(c => c.id === id);
+  const sorted = [...returns].sort((a, b) => b.date.localeCompare(a.date));
+  const totalReturned = returns.reduce((s, r) => s + r.totalAmount, 0);
+
+  return (
+    <div>
+      <div className="ph"><div className="ptit">All Return Entries</div><div className="psub">Manage all returns</div></div>
+      <div className="pb">
+        <div className="sgrid mb24">
+          <div className="scard" style={{ "--sc": "var(--accent)" }}>
+            <div className="sval">{sorted.length}</div>
+            <div className="slbl">Total Returns</div>
+          </div>
+          <div className="scard" style={{ "--sc": "var(--info)" }}>
+            <div className="sval">{fmt(totalReturned)}</div>
+            <div className="slbl">Total Returned</div>
+          </div>
+        </div>
+        {sorted.length === 0 ? (
+          <div className="card emp"><div className="eic">📋</div>No returns yet</div>
+        ) : (
+          <div className="card">
+            <div className="tw">
+              <table>
+                <thead><tr><th>Date</th><th>Client</th><th>Vendor</th><th>Items</th><th>Amount</th><th></th></tr></thead>
+                <tbody>
+                  {sorted.map((r) => (
+                    <tr key={r.id}>
+                      <td>{fmtDate(r.date)}</td>
+                      <td>{getClient(r.clientId)?.name}</td>
+                      <td><span className="bdg bg">{r.addedBy}</span></td>
+                      <td>{r.items.length}</td>
+                      <td className="ta">{fmt(r.totalAmount)}</td>
+                      <td style={{ textAlign: "right" }}><button className="btn btn-d btn-sm" onClick={() => onDelete(r.id)}>Delete</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [currentUser,  setCurrentUser]  = useState(null);
   const [activePage,   setActivePage]   = useState(null);
   const [purchases,    setPurchases]    = useState([]);
+  const [returns,      setReturns]      = useState([]);
   const [clients,      setClients]      = useState([]);
   const getClient = (id) => clients.find(c => c.id === id);
   const [groceryItems, setGroceryItems] = useState([]);
@@ -1738,14 +1929,16 @@ export default function App() {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cls, items, purs] = await Promise.all([
+      const [cls, items, purs, rets] = await Promise.all([
         api("/clients"),
         api("/items"),
         api("/purchases"),
+        api("/returns"),
       ]);
       setClients(cls);
       setGroceryItems(items);
       setPurchases(purs);
+      setReturns(rets);
       // Load users only for admin
       const stored = localStorage.getItem("cf_user");
       if (stored && JSON.parse(stored).role === "admin") {
@@ -1771,7 +1964,7 @@ export default function App() {
     localStorage.removeItem("cf_user");
     setCurrentUser(null);
     setActivePage(null);
-    setPurchases([]); setClients([]); setGroceryItems([]); setUsers([]);
+    setPurchases([]); setClients([]); setGroceryItems([]); setUsers([]); setReturns([]);
   };
 
   // Restore session on page refresh
@@ -1850,6 +2043,17 @@ export default function App() {
     setUsers((prev) => prev.map((x) => x.id === u.id ? updated : x));
   };
 
+  // ── Returns CRUD ───────────────────────────────────────────
+  const addReturn = async (r) => {
+    const saved = await api("/returns", { method: "POST", body: JSON.stringify(r) });
+    setReturns((prev) => [saved, ...prev]);
+    return saved;
+  };
+  const deleteReturn = async (id) => {
+    await api("/returns/" + id, { method: "DELETE" });
+    setReturns((prev) => prev.filter((r) => r.id !== id));
+  };
+
   const renderPage = () => {
     if (loading) return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", color: "var(--muted)", flexDirection: "column", gap: 16 }}>
@@ -1869,6 +2073,7 @@ export default function App() {
         case "manage-items":     return <ManageItemsPage   groceryItems={groceryItems} onAdd={addItem} onDelete={deleteItem} onEdit={editItem} />;
         case "manage-users":     return <ManageUsersPage   users={users} clients={clients} onAdd={addUser} onDelete={deleteUser} onEdit={editUser} />;
         case "manage-purchases": return <ManagePurchasesPage purchases={purchases} clients={clients} groceryItems={groceryItems} onDelete={deletePurchase} onEdit={editPurchase} />;
+        case "manage-returns":   return <ManageReturnsPage returns={returns} clients={clients} onDelete={deleteReturn} />;
         default:          return <AdminDashboard purchases={purchases} clients={clients} />;
       }
     } else {
@@ -1877,6 +2082,8 @@ export default function App() {
         case "add-purchase":     return <AddPurchasePage  currentUser={currentUser} clients={clients} groceryItems={groceryItems} onAdd={addPurchase} />;
         case "my-purchases":     return <MyPurchasesPage  currentUser={currentUser} purchases={purchases} />;
         case "manage-my-purchases": return <ManagePurchasesPage purchases={purchases.filter(p => p.addedBy === currentUser.username)} clients={clients} groceryItems={groceryItems} onDelete={deletePurchase} onEdit={editPurchase} />;
+        case "add-return":       return <AddReturnPage    currentUser={currentUser} clients={clients} groceryItems={groceryItems} onAdd={addReturn} />;
+        case "my-returns":       return <MyReturnsPage    currentUser={currentUser} returns={returns} />;
         default:                 return <VendorDashboard  currentUser={currentUser} purchases={purchases} clients={clients} />;
       }
     }
